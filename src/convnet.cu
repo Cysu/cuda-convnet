@@ -86,6 +86,8 @@ ConvNet::ConvNet(PyListObject* layerParams, int minibatchSize, int deviceID) : T
 Layer* ConvNet::initLayer(string& layerType, PyObject* paramsDict) {
     if (layerType == "fc") {
         _layers.push_back(new FCLayer(this, paramsDict));
+    } else if (layerType == "condprob") {
+        _layers.push_back(new CondProbLayer(this, paramsDict));
     } else if (layerType == "conv") {
         _layers.push_back(new ConvLayer(this, paramsDict));
     } else if (layerType == "local") {

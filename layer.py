@@ -779,6 +779,157 @@ class WeightLayerParser(LayerWithInputParser):
                 
         return dic
         
+class CondProbLayerParser(LayerWithInputParser):
+    LAYER_PAT = re.compile(r'^\s*([^\s\[]+)(?:\[(\d+)\])?\s*$') # matches things like layername[5], etc
+    
+    def __init__(self):
+        LayerWithInputParser.__init__(self)
+    
+    @staticmethod
+    def get_layer_name(name_str):
+        m = CondProbLayerParser.LAYER_PAT.match(name_str)
+        if not m:
+            return None
+        return m.group(1), m.group(2)
+    
+    def add_params(self, mcp):
+        LayerWithInputParser.add_params(self, mcp)
+
+        dic, name = self.dic, self.dic['name']
+        dic['epsW'] = mcp.safe_get_float_list(name, 'epsW')
+        dic['momW'] = mcp.safe_get_float_list(name, 'momW')
+        dic['wc'] = mcp.safe_get_float_list(name, 'wc')
+        
+        self.verify_num_params(['epsW', 'momW', 'wc'])
+        
+        dic['gradConsumer'] = any(w > 0 for w in dic['epsW'])
+        
+    @staticmethod
+    def unshare_weights(layer, layers, matrix_idx=None):
+        def unshare(layer, layers, indices):
+            for i in indices:
+                if layer['weightSourceLayerIndices'][i] >= 0:
+                    src_name = layers[layer['weightSourceLayerIndices'][i]]['name']
+                    src_matrix_idx = layer['weightSourceMatrixIndices'][i]
+                    layer['weightSourceLayerIndices'][i] = -1
+                    layer['weightSourceMatrixIndices'][i] = -1
+                    layer['weights'][i] = layer['weights'][i].copy()
+                    layer['weightsInc'][i] = n.zeros_like(layer['weights'][i])
+                    print "Unshared weight matrix %s[%d] from %s[%d]." % (layer['name'], i, src_name, src_matrix_idx)
+                else:
+                    print "Weight matrix %s[%d] already unshared." % (layer['name'], i)
+        if 'weightSourceLayerIndices' in layer:
+            unshare(layer, layers, range(len(layer['inputs'])) if matrix_idx is None else [matrix_idx])
+
+    # Load weight/biases initialization module
+    def call_init_func(self, param_name, shapes, input_idx=-1):
+        dic = self.dic
+        func_pat = re.compile('^([^\.]+)\.([^\(\)]+)\s*(?:\(([^,]+(?:,[^,]+)*)\))?$')
+        m = func_pat.match(dic[param_name])
+        if not m:
+            raise LayerParsingError("Layer '%s': '%s' parameter must have format 'moduleName.functionName(param1,param2,...)'; got: %s." % (dic['name'], param_name, dic['initWFunc']))
+        module, func = m.group(1), m.group(2)
+        params = m.group(3).split(',') if m.group(3) is not None else []
+        try:
+            mod = __import__(module)
+            return getattr(mod, func)(dic['name'], input_idx, shapes, params=params) if input_idx >= 0 else getattr(mod, func)(dic['name'], shapes, params=params)
+        except (ImportError, AttributeError, TypeError), e:
+            raise LayerParsingError("Layer '%s': %s." % (dic['name'], e))
+        
+    def make_weights(self, initW, rows, cols, order='C'):
+        dic = self.dic
+        dic['weights'], dic['weightsInc'] = [], []
+        if dic['initWFunc']: # Initialize weights from user-supplied python function
+            # Initialization function is supplied in the format
+            # module.func
+            for i in xrange(len(dic['inputs'])):
+                dic['weights'] += [self.call_init_func('initWFunc', (rows[i], cols[i]), input_idx=i)]
+
+                if type(dic['weights'][i]) != n.ndarray:
+                    raise LayerParsingError("Layer '%s[%d]': weight initialization function %s must return numpy.ndarray object. Got: %s." % (dic['name'], i, dic['initWFunc'], type(dic['weights'][i])))
+                if dic['weights'][i].dtype != n.float32:
+                    raise LayerParsingError("Layer '%s[%d]': weight initialization function %s must weight matrices consisting of single-precision floats. Got: %s." % (dic['name'], i, dic['initWFunc'], dic['weights'][i].dtype))
+                if dic['weights'][i].shape != (rows[i], cols[i]):
+                    raise LayerParsingError("Layer '%s[%d]': weight matrix returned by weight initialization function %s has wrong shape. Should be: %s; got: %s." % (dic['name'], i, dic['initWFunc'], (rows[i], cols[i]), dic['weights'][i].shape))
+                if n.any(dic['weights'][i] < 0) or n.any(abs(dic['weights'][i].sum(axis=0) - 1) > 1e-6):
+                    raise LayerParsingError("Layer '%s[%d]': weight matrix is not a probability matrix" % (dic['name'], i))
+
+                # Convert to desired order
+                dic['weights'][i] = n.require(dic['weights'][i], requirements=order)
+                dic['weightsInc'] += [n.zeros_like(dic['weights'][i])]
+                print "Layer '%s[%d]' initialized weight matrices from function %s" % (dic['name'], i, dic['initWFunc'])
+        else:
+            for i in xrange(len(dic['inputs'])):
+                if dic['weightSourceLayerIndices'][i] >= 0: # Shared weight matrix
+                    src_layer = self.prev_layers[dic['weightSourceLayerIndices'][i]] if dic['weightSourceLayerIndices'][i] < len(self.prev_layers) else dic
+                    dic['weights'] += [src_layer['weights'][dic['weightSourceMatrixIndices'][i]]]
+                    dic['weightsInc'] += [src_layer['weightsInc'][dic['weightSourceMatrixIndices'][i]]]
+                    if dic['weights'][i].shape != (rows[i], cols[i]):
+                        raise LayerParsingError("Layer '%s': weight sharing source matrix '%s' has shape %dx%d; should be %dx%d." 
+                                                % (dic['name'], dic['weightSource'][i], dic['weights'][i].shape[0], dic['weights'][i].shape[1], rows[i], cols[i]))
+                    if n.any(dic['weights'][i] < 0) or n.any(abs(dic['weights'][i].sum(axis=0) - 1) > 1e-6):
+                        raise LayerParsingError("Layer '%s[%d]': weight matrix is not a probability matrix" % (dic['name'], i))
+                    print "Layer '%s' initialized weight matrix %d from %s" % (dic['name'], i, dic['weightSource'][i])
+                else:
+                    if initW[i] == 'random':
+                        dic['weights'] += [n.array(nr.rand(rows[i], cols[i]), dtype=n.single, order=order)]
+                        dic['weights'][i] /= dic['weights'][i].sum(axis=0)
+                    elif initW[i] == 'identity':
+                        if rows[i] != cols[i]:
+                            raise LayerParsingError("Layer '%s[%d]': weight matrix cannot be set to Identity matrix since it is not square" % (dic['name'], i))
+                        dic['weights'] += [n.array(n.identity(rows[i]), dtype=n.single, order=order)]
+                    else:
+                        raise LayerParsingError("Layer '%s[%d]': weight matrix initW error; should be either random or identity" % (dic['name'], i))
+                    if n.any(dic['weights'][i] < 0) or n.any(abs(dic['weights'][i].sum(axis=0) - 1) > 1e-6):
+                        raise LayerParsingError("Layer '%s[%d]': weight matrix is not a probability matrix" % (dic['name'], i))
+                    dic['weightsInc'] += [n.zeros_like(dic['weights'][i])]
+        
+    def parse(self, name, mcp, prev_layers, model):
+        dic = LayerWithInputParser.parse(self, name, mcp, prev_layers, model)
+        dic['requiresParams'] = True
+        dic['gradConsumer'] = True
+        dic['initW'] = mcp.safe_get_list(name, 'initW', default="random")
+        dic['initWFunc'] = mcp.safe_get(name, 'initWFunc', default="")
+        # Find shared weight matrices
+        
+        dic['weightSource'] = mcp.safe_get_list(name, 'weightSource', default=[''] * len(dic['inputs']))
+        self.verify_num_params(['initW', 'weightSource'])
+        
+        prev_names = map(lambda x: x['name'], prev_layers)
+        dic['weightSourceLayerIndices'] = []
+        dic['weightSourceMatrixIndices'] = []
+        for i, src_name in enumerate(dic['weightSource']):
+            src_layer_idx = src_layer_matrix_idx = -1
+            if src_name != '':
+                src_layer_match = WeightLayerParser.get_layer_name(src_name)
+                if src_layer_match is None:
+                    raise LayerParsingError("Layer '%s': unable to parse weight sharing source '%s'. Format is layer[idx] or just layer, in which case idx=0 is used." % (name, src_name))
+                src_layer_name = src_layer_match[0]
+                src_layer_matrix_idx = int(src_layer_match[1]) if src_layer_match[1] is not None else 0
+
+                if prev_names.count(src_layer_name) == 0 and src_layer_name != name:
+                    raise LayerParsingError("Layer '%s': weight sharing source layer '%s' does not exist." % (name, src_layer_name))
+                
+                src_layer_idx = prev_names.index(src_layer_name) if src_layer_name != name else len(prev_names)
+                src_layer = prev_layers[src_layer_idx] if src_layer_name != name else dic
+                if src_layer['type'] != dic['type']:
+                    raise LayerParsingError("Layer '%s': weight sharing source layer '%s' is of type '%s'; should be '%s'." % (name, src_layer_name, src_layer['type'], dic['type']))
+                if src_layer_name != name and len(src_layer['weights']) <= src_layer_matrix_idx:
+                    raise LayerParsingError("Layer '%s': weight sharing source layer '%s' has %d weight matrices, but '%s[%d]' requested." % (name, src_layer_name, len(src_layer['weights']), src_name, src_layer_matrix_idx))
+                if src_layer_name == name and src_layer_matrix_idx >= i:
+                    raise LayerParsingError("Layer '%s': weight sharing source '%s[%d]' not defined yet." % (name, name, src_layer_matrix_idx))
+
+            dic['weightSourceLayerIndices'] += [src_layer_idx]
+            dic['weightSourceMatrixIndices'] += [src_layer_matrix_idx]
+
+        dic['usesActs'] = False
+        dic['outputs'] = mcp.safe_get_int(name, 'outputs')
+
+        self.verify_num_range(dic['outputs'], 'outputs', 1, None)
+        self.make_weights(dic['initW'], dic['numInputs'], [dic['outputs']] * len(dic['numInputs']), order='F')
+        print "Initialized conditional probability layer '%s', producing %d outputs" % (name, dic['outputs'])
+        return dic
+ 
 class FCLayerParser(WeightLayerParser):
     def __init__(self):
         WeightLayerParser.__init__(self)
@@ -1097,7 +1248,7 @@ class LogregCostParser(CostParser):
         dic = CostParser.parse(self, name, mcp, prev_layers, model)
         if dic['numInputs'][0] != 1: # first input must be labels
             raise LayerParsingError("Layer '%s': dimensionality of first input must be 1" % name)
-        if prev_layers[dic['inputs'][1]]['type'] != 'softmax':
+        if prev_layers[dic['inputs'][1]]['type'] != 'softmax' and prev_layers[dic['inputs'][1]]['type'] != 'condprob':
             raise LayerParsingError("Layer '%s': second input must be softmax layer" % name)
         if dic['numInputs'][1] != model.train_data_provider.get_num_classes():
             raise LayerParsingError("Layer '%s': softmax input '%s' must produce %d outputs, because that is the number of classes in the dataset" \
@@ -1118,6 +1269,7 @@ class SumOfSquaresCostParser(CostParser):
 # All the layer parsers
 layer_parsers = {'data': lambda : DataLayerParser(),
                  'fc': lambda : FCLayerParser(),
+                 'condprob': lambda : CondProbLayerParser(),
                  'conv': lambda : ConvLayerParser(),
                  'local': lambda : LocalUnsharedLayerParser(),
                  'softmax': lambda : SoftmaxLayerParser(),

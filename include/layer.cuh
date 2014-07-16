@@ -139,6 +139,25 @@ public:
     Weights& getWeights(int idx);
 };
 
+class CondProbLayer : public Layer {
+protected:
+    WeightList _weights;
+    float _wStep;
+
+    void bpropCommon(NVMatrix& v, PASS_TYPE passType);
+    void fpropActs(int inpIdx, float scaleTargets, PASS_TYPE passType);
+    void bpropActs(NVMatrix& v, int inpIdx, float scaleTargets, PASS_TYPE passType);
+    void bpropWeights(NVMatrix& v, int inpIdx, PASS_TYPE passType);
+
+public:
+    CondProbLayer(ConvNet* convNet, PyObject* paramsDict);
+    virtual void updateWeights();
+    virtual void copyToCPU();
+    virtual void copyToGPU();
+    void checkGradients();
+    Weights& getWeights(int idx);
+};
+
 class FCLayer : public WeightLayer {
 protected:
     void fpropActs(int inpIdx, float scaleTargets, PASS_TYPE passType);

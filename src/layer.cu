@@ -363,6 +363,114 @@ Weights& WeightLayer::getWeights(int idx) {
 
 /*
  * =======================
+ * CondProbLayer
+ * =======================
+ */
+CondProbLayer::CondProbLayer(ConvNet* convNet, PyObject* paramsDict) :
+    Layer(convNet, paramsDict, true) {
+
+    MatrixV& hWeights = *pyDictGetMatrixV(paramsDict, "weights");
+    MatrixV& hWeightsInc = *pyDictGetMatrixV(paramsDict, "weightsInc");
+
+    floatv& momW = *pyDictGetFloatV(paramsDict, "momW");
+    floatv& epsW = *pyDictGetFloatV(paramsDict, "epsW");
+    floatv& wc = *pyDictGetFloatV(paramsDict, "wc");
+
+    // Source layers for shared weights
+    intv& weightSourceLayerIndices = *pyDictGetIntV(paramsDict, "weightSourceLayerIndices");
+    // Weight matrix indices (inside the above source layers) for shared weights
+    intv& weightSourceMatrixIndices = *pyDictGetIntV(paramsDict, "weightSourceMatrixIndices");
+
+    for (int i = 0; i < weightSourceLayerIndices.size(); i++) {
+        int srcLayerIdx = weightSourceLayerIndices[i];
+        int matrixIdx = weightSourceMatrixIndices[i];
+        if (srcLayerIdx == convNet->getNumLayers()) { // Current layer
+            _weights.addWeights(*new Weights(_weights[matrixIdx], epsW[i]));
+        } else if (srcLayerIdx >= 0) {
+            WeightLayer& srcLayer = *static_cast<WeightLayer*>(&convNet->getLayer(srcLayerIdx));
+            Weights* srcWeights = &srcLayer.getWeights(matrixIdx);
+            _weights.addWeights(*new Weights(*srcWeights, epsW[i]));
+        } else {
+            _weights.addWeights(*new Weights(*hWeights[i], *hWeightsInc[i], epsW[i], wc[i], momW[i], false));
+        }
+    }
+
+    // Epsilons for finite-difference gradient checking operation
+    _wStep = 0.1;
+
+    delete &weightSourceLayerIndices;
+    delete &weightSourceMatrixIndices;
+    delete &hWeights;
+    delete &hWeightsInc;
+    delete &momW;
+    delete &epsW;
+    delete &wc;
+}
+
+void CondProbLayer::bpropCommon(NVMatrix& v, PASS_TYPE passType) {
+    for (int i = 0; i < _weights.getSize(); i++) {
+        if (_weights[i].getEps() > 0) {
+            bpropWeights(v, i, passType);
+            // Increment its number of updates
+            _weights[i].incNumUpdates();
+        }
+    }
+}
+
+void CondProbLayer::fpropActs(int inpIdx, float scaleTargets, PASS_TYPE passType) {
+    getActs().addProduct(*_inputs[inpIdx], *_weights[inpIdx], scaleTargets, 1);
+}
+
+void CondProbLayer::bpropActs(NVMatrix& v, int inpIdx, float scaleTargets, PASS_TYPE passType) {
+    NVMatrix& weights_T = _weights[inpIdx].getW().getTranspose();
+    _prev[inpIdx]->getActsGrad().addProduct(v, weights_T, scaleTargets, 1);
+    delete &weights_T;
+}
+
+void CondProbLayer::bpropWeights(NVMatrix& v, int inpIdx, PASS_TYPE passType) {
+    int numCases = v.getNumRows();
+
+    NVMatrix& prevActs_T = _prev[inpIdx]->getActs().getTranspose();
+    float scaleInc = (_weights[inpIdx].getNumUpdates() == 0 && passType != PASS_GC) * _weights[inpIdx].getMom();
+    float scaleGrad = passType == PASS_GC ? 1 : _weights[inpIdx].getEps() / numCases;
+
+    _weights[inpIdx].getInc().addProduct(prevActs_T, v, scaleInc, scaleGrad);
+
+    delete &prevActs_T;
+}
+
+void CondProbLayer::updateWeights() {
+    _weights.update();
+    // Project to conditional probability weights space
+    for (int i = 0; i < _weights.getSize(); ++i) {
+        NVMatrix& W = _weights[i].getW();
+        W.apply(ReluNeuron::ReluOperator());
+        NVMatrix& s = W.sum(0);
+        NVMatrix S;
+        s.tile(W.getNumRows(), 1, S);
+        W.eltwiseDivide(S);
+    }
+}
+
+void CondProbLayer::copyToCPU() {
+    _weights.copyToCPU();
+}
+
+void CondProbLayer::copyToGPU() {
+    _weights.copyToGPU();
+}
+
+void CondProbLayer::checkGradients() {
+    for (int i = 0; i < _weights.getSize(); i++) {
+        _convNet->checkGradient(_name + " weights[" + tostr(i) + "]", _wStep, _weights[i]);
+    }
+}
+
+Weights& CondProbLayer::getWeights(int idx) {
+    return _weights[idx];
+}
+/*
+ * =======================
  * FCLayer
  * =======================
  */
