@@ -880,8 +880,6 @@ class CondProbLayerParser(LayerWithInputParser):
                         dic['weights'] += [n.array(n.identity(rows[i]), dtype=n.single, order=order)]
                     else:
                         raise LayerParsingError("Layer '%s[%d]': weight matrix initW error; should be either random or identity" % (dic['name'], i))
-                    if n.any(dic['weights'][i] < 0) or n.any(abs(dic['weights'][i].sum(axis=0) - 1) > 1e-6):
-                        raise LayerParsingError("Layer '%s[%d]': weight matrix is not a probability matrix" % (dic['name'], i))
                     dic['weightsInc'] += [n.zeros_like(dic['weights'][i])]
         
     def parse(self, name, mcp, prev_layers, model):
@@ -1249,12 +1247,26 @@ class LogregCostParser(CostParser):
         if dic['numInputs'][0] != 1: # first input must be labels
             raise LayerParsingError("Layer '%s': dimensionality of first input must be 1" % name)
         if prev_layers[dic['inputs'][1]]['type'] != 'softmax' and prev_layers[dic['inputs'][1]]['type'] != 'condprob':
-            raise LayerParsingError("Layer '%s': second input must be softmax layer" % name)
+            raise LayerParsingError("Layer '%s': second input must be softmax or condprob layer" % name)
         if dic['numInputs'][1] != model.train_data_provider.get_num_classes():
             raise LayerParsingError("Layer '%s': softmax input '%s' must produce %d outputs, because that is the number of classes in the dataset" \
                                     % (name, prev_layers[dic['inputs'][1]]['name'], model.train_data_provider.get_num_classes()))
         
         print "Initialized logistic regression cost '%s'" % name
+        return dic
+
+class BinxentCostParser(CostParser):
+    def __init__(self):
+        CostParser.__init__(self, num_inputs=2)
+
+    def parse(self, name, mcp, prev_layers, model):
+        dic = CostParser.parse(self, name, mcp, prev_layers, model)
+        if dic['numInputs'][0] != dic['numInputs'][1]:
+            raise LayerParsingError("Layer '%s': input layers must have same output shape" % (name))
+        if dic['numInputs'][0] != model.train_data_provider.get_num_classes():
+            raise LayerParsingError("Layer '%s': input layers must product %d outputs" % (name, model.train_data_provider.get_num_classes()))
+
+        print "Initialized binary cross entropy cost '%s'" % name
         return dic
     
 class SumOfSquaresCostParser(CostParser):
@@ -1287,6 +1299,7 @@ layer_parsers = {'data': lambda : DataLayerParser(),
                  'rgb2lab': lambda : RGBToLABLayerParser(),
                  'rscale': lambda : RandomScaleLayerParser(),
                  'cost.logreg': lambda : LogregCostParser(),
+                 'cost.binxent': lambda : BinxentCostParser(),
                  'cost.sum2': lambda : SumOfSquaresCostParser()}
  
 # All the neuron parsers

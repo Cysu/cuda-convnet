@@ -193,6 +193,7 @@ class ConvNet(IGPUModel):
         DataProvider.register_data_provider('dummy-cn-n', 'Dummy ConvNet', DummyConvNetDataProvider)
         DataProvider.register_data_provider('cifar-cropped', 'Cropped CIFAR', CroppedCIFARDataProvider)
         DataProvider.register_data_provider('online-multi-label-cropped', 'Cropped Online MultiLabel', CroppedOnlineMultiLabelDataProvider)
+        DataProvider.register_data_provider('dummy-cn-multi-label-n', 'Dummy ConvNet Multi Label', DummyConvNetMultiLabelDataProvider)
 
         return op
 

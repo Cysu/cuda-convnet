@@ -23,7 +23,7 @@
 # EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import numpy as n
-from numpy.random import randn, rand, random_integers
+from numpy.random import randn, rand, random_integers, binomial
 import os
 from util import *
 
@@ -180,6 +180,30 @@ class LabeledDummyDataProvider(DummyDataProvider):
         self.advance_batch()
         data = rand(self.num_cases, self.get_data_dims()).astype(n.single) # <--changed to rand
         labels = n.require(n.c_[random_integers(0,self.num_classes-1,self.num_cases)], requirements='C', dtype=n.single)
+
+        return self.curr_epoch, self.curr_batchnum, {'data':data, 'labels':labels}
+
+class MultiLabelDummyDataProvider(DummyDataProvider):
+    def __init__(self, data_dim, num_classes=10, num_cases=512):
+        #self.data_dim = data_dim
+        self.batch_range = [1]
+        self.batch_meta = {'num_vis': data_dim,
+                           'label_names': [str(x) for x in range(num_classes)],
+                           'data_in_rows':True}
+        self.num_cases = num_cases
+        self.num_classes = num_classes
+        self.curr_epoch = 1
+        self.curr_batchnum = 1
+        self.batch_idx=0
+
+    def get_num_classes(self):
+        return self.num_classes
+
+    def get_next_batch(self):
+        epoch,  batchnum = self.curr_epoch, self.curr_batchnum
+        self.advance_batch()
+        data = rand(self.num_cases, self.get_data_dims()).astype(n.single) # <--changed to rand
+        labels = n.require(binomial(1, 0.3, (self.num_cases, self.num_classes)), requirements='C', dtype=n.single)
 
         return self.curr_epoch, self.curr_batchnum, {'data':data, 'labels':labels}
 

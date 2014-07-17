@@ -100,6 +100,61 @@ __global__ void kLogregCostGrad(float* y_l, float* labels, float* dE_dy_l, const
 }
 
 /*
+ * E = - tlog(o) - (1-t)log(1-o)
+ * probs:           (numOut, numCases)
+ * labels:          (numOut, numCases)
+ * labelLogProbs:   (numOut, numCases)   (*out)
+ * correct:         (numOut, numCases)   (*out)
+ */
+__global__ void kBinxentCost(float* probs, float* labels, float* labelLogProbs, float* correct, const int numCases, const int numOut) {
+    const int tx = blockIdx.x * LOGREG_GRAD_THREADS_X + threadIdx.x;
+    const int ty = blockIdx.y * LOGREG_GRAD_THREADS_Y + threadIdx.y;
+    const int tidx = ty * numCases + tx;
+
+    if (ty < numOut && tx < numCases) {
+        const int label = int(labels[tidx]);
+        const float prob = probs[tidx];
+
+        if (label == 1) {
+            labelLogProbs[tidx] = __logf(prob);
+            correct[tidx] = (prob > 0.5);
+        } else if (label == 0) {
+            labelLogProbs[tidx] = __logf(1.f - prob);
+            correct[tidx] = (prob < 0.5);
+        } else {
+            // Should not occur
+        }
+    }
+}
+
+template <bool add>
+__global__ void kBinxentCostGrad(float* probs, float* labels, float* grads, const int numCases, const int numOut, const float gradCoeff) {
+    const int tx = blockIdx.x * LOGREG_GRAD_THREADS_X + threadIdx.x;
+    const int ty = blockIdx.y * LOGREG_GRAD_THREADS_Y + threadIdx.y;
+    const int tidx = ty * numCases + tx;
+
+    if (ty < numOut && tx < numCases) {
+        const int label = int(labels[tidx]);
+        const float prob = probs[tidx];
+        float v = gradCoeff;
+
+        if (label == 1) {
+            v = __fdividef(v, prob);
+        } else if (label == 0) {
+            v = __fdividef(v, prob - 1.f);
+        } else {
+            // Should not occur
+        }
+
+        if (add) {
+            grads[tidx] += v;
+        } else {
+            grads[tidx] = v;
+        }
+    }
+}
+
+/*
  * dE_dy_l: (numOut, numCases)
  * y_l:     (numOut, numCases)
  *
@@ -242,6 +297,57 @@ void computeLogregGrad(NVMatrix& labels, NVMatrix& probs, NVMatrix& target, bool
     }
 
     getLastCudaError("computeLogregGrad: Kernel execution failed");
+}
+
+/*
+ * E = - tlog(o) - (1-t)log(1-o)
+ * probs:           (numOut, numCases)
+ * labels:          (numOut, numCases)
+ * labelLogProbs:   (numOut, numCases)   (*out)
+ * correct:         (numOut, numCases)   (*out)
+ */
+void computeBinxentCost(NVMatrix& labels, NVMatrix& probs, NVMatrix& labelLogProbs_out, NVMatrix& correct_out) {
+    int numCases = probs.getLeadingDim();
+    int numOut = probs.getFollowingDim();
+
+    assert(labels.getLeadingDim() == numCases);
+    assert(labels.getFollowingDim() == numOut);
+    assert(!labels.isTrans());
+    assert(!probs.isTrans());
+    assert(labels.isContiguous());
+    assert(probs.isContiguous());
+
+    labelLogProbs_out.resize(numOut, numCases);
+    correct_out.resize(numOut, numCases);
+    dim3 threads(LOGREG_GRAD_THREADS_X, LOGREG_GRAD_THREADS_Y);
+    dim3 blocks(DIVUP(numCases, LOGREG_GRAD_THREADS_X), DIVUP(numOut, LOGREG_GRAD_THREADS_Y));
+    kBinxentCost<<<blocks, threads>>>(probs.getDevData(), labels.getDevData(), labelLogProbs_out.getDevData(), correct_out.getDevData(), numCases, numOut);
+
+    getLastCudaError("computeBinxentCost: Kernel execution failed");
+}
+
+void computeBinxentGrad(NVMatrix& labels, NVMatrix& probs, NVMatrix& target, bool add, float coeff) {
+    int numCases = probs.getLeadingDim();
+    int numOut = probs.getFollowingDim();
+
+    assert(labels.getLeadingDim() == numCases);
+    assert(labels.getFollowingDim() == numOut);
+    assert(!labels.isTrans());
+    assert(!probs.isTrans());
+    assert(labels.isContiguous());
+    assert(probs.isContiguous());
+    assert(target.isContiguous());
+
+    dim3 threads(LOGREG_GRAD_THREADS_X, LOGREG_GRAD_THREADS_Y);
+    dim3 blocks(DIVUP(numCases, LOGREG_GRAD_THREADS_X), DIVUP(numOut, LOGREG_GRAD_THREADS_Y));
+    if (!add) {
+        target.resize(probs);
+        kBinxentCostGrad<false><<<blocks, threads>>>(probs.getDevData(), labels.getDevData(), target.getDevData(), numCases, numOut, coeff);
+    } else {
+        kBinxentCostGrad<true><<<blocks, threads>>>(probs.getDevData(), labels.getDevData(), target.getDevData(), numCases, numOut, coeff);
+    }
+
+    getLastCudaError("computeBinxentGrad: Kernel execution failed");
 }
 
 void computeSoftmaxGrad(NVMatrix& acts, NVMatrix& actsGrad, NVMatrix& target, bool add) {

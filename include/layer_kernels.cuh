@@ -38,6 +38,8 @@
 
 void computeLogregCost(NVMatrix& labels, NVMatrix& probs, NVMatrix& labelLogProbs_out, NVMatrix& correctProbs_out);
 void computeLogregGrad(NVMatrix& labels, NVMatrix& probs, NVMatrix& target, bool add, float coeff);
+void computeBinxentCost(NVMatrix& labels, NVMatrix& probs, NVMatrix& labelLogProbs_out, NVMatrix& correct_out);
+void computeBinxentGrad(NVMatrix& labels, NVMatrix& probs, NVMatrix& target, bool add, float coeff);
 void computeSoftmaxGrad(NVMatrix& acts, NVMatrix& actsGrad, NVMatrix& target, bool add);
 
 // Numerical stability optimization: this routine combines computeLogregGrad with computeSoftmaxGrad

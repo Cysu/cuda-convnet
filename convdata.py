@@ -199,3 +199,19 @@ class DummyConvNetDataProvider(LabeledDummyDataProvider):
     # Returns the dimensionality of the two data matrices returned by get_next_batch
     def get_data_dims(self, idx=0):
         return self.batch_meta['num_vis'] if idx == 0 else 1
+
+class DummyConvNetMultiLabelDataProvider(MultiLabelDummyDataProvider):
+    def __init__(self, data_dim):
+        MultiLabelDummyDataProvider.__init__(self, data_dim)
+
+    def get_next_batch(self):
+        epoch, batchnum, dic = MultiLabelDummyDataProvider.get_next_batch(self)
+
+        dic['data'] = n.require(dic['data'].T, requirements='C')
+        dic['labels'] = n.require(dic['labels'].T, requirements='C')
+
+        return epoch, batchnum, [dic['data'], dic['labels']]
+
+    def get_data_dims(self, idx=0):
+        return self.batch_meta['num_vis'] if idx == 0 else len(self.batch_meta['label_names'])
+

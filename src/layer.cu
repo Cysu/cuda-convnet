@@ -442,13 +442,14 @@ void CondProbLayer::bpropWeights(NVMatrix& v, int inpIdx, PASS_TYPE passType) {
 void CondProbLayer::updateWeights() {
     _weights.update();
     // Project to conditional probability weights space
+    NVMatrix S;
     for (int i = 0; i < _weights.getSize(); ++i) {
         NVMatrix& W = _weights[i].getW();
         W.apply(ReluNeuron::ReluOperator());
         NVMatrix& s = W.sum(0);
-        NVMatrix S;
         s.tile(W.getNumRows(), 1, S);
         W.eltwiseDivide(S);
+        delete &s;
     }
 }
 
@@ -1074,6 +1075,8 @@ CostLayer& CostLayer::makeCostLayer(ConvNet* convNet, string& type, PyObject* pa
         return *new LogregCostLayer(convNet, paramsDict);
     } else if (type == "cost.sum2") {
         return *new SumOfSquaresCostLayer(convNet, paramsDict);
+    } else if (type == "cost.binxent") {
+        return *new BinxentCostLayer(convNet, paramsDict);
     }
     throw string("Unknown cost layer type ") + type;
 }
@@ -1111,6 +1114,35 @@ void LogregCostLayer::bpropActs(NVMatrix& v, int inpIdx, float scaleTargets, PAS
     if (doWork) {
         computeLogregGrad(labels, probs, target, scaleTargets == 1, _coeff);
     }
+}
+
+/*
+ * =====================
+ * BinxentCostLayer
+ * =====================
+ */
+BinxentCostLayer::BinxentCostLayer(ConvNet* convNet, PyObject* paramsDict) : CostLayer(convNet, paramsDict, false) {
+}
+
+void BinxentCostLayer::fpropActs(int inpIdx, float scaleTargets, PASS_TYPE passType) {
+    if (inpIdx == 0) {
+        NVMatrix& labels = *_inputs[0];
+        NVMatrix& probs = *_inputs[1];
+        NVMatrix& labelLogProbs = getActs(), correct;
+        int numOut = probs.getFollowingDim();
+        computeBinxentCost(labels, probs, labelLogProbs, correct);
+        _costv.clear();
+        _costv.push_back(-labelLogProbs.sum());
+        _costv.push_back((correct.getNumElements() - correct.sum()) / numOut);
+    }
+}
+
+void BinxentCostLayer::bpropActs(NVMatrix& v, int inpIdx, float scaleTargets, PASS_TYPE passType) {
+    assert(inpIdx == 1);
+    NVMatrix& labels = _prev[0]->getActs();
+    NVMatrix& probs = _prev[1]->getActs();
+    NVMatrix& target = _prev[1]->getActsGrad();
+    computeBinxentGrad(labels, probs, target, scaleTargets == 1, _coeff);
 }
 
 /*
