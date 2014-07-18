@@ -262,7 +262,15 @@ NeuronLayer::NeuronLayer(ConvNet* convNet, PyObject* paramsDict)
 }
 
 void NeuronLayer::bpropActs(NVMatrix& v, int inpIdx, float scaleTargets, PASS_TYPE passType) {
-    _neuron->computeInputGrad(v, _prev[0]->getActsGrad(), scaleTargets > 0);
+    // Also should check the neuron to be logistic. But cannot get the neuron type.
+    bool doBinxentLogisticGrad = _next.size() == 1 && _next[0]->getType() == "cost.binxent";
+    if (doBinxentLogisticGrad) {
+        NVMatrix& labels = _next[0]->getPrev()[0]->getActs();
+        float gradCoeff = dynamic_cast<CostLayer*>(_next[0])->getCoeff();
+        computeBinxentLogisticGrad(labels, getActs(), _prev[0]->getActsGrad(), scaleTargets == 1, gradCoeff);
+    } else {
+        _neuron->computeInputGrad(v, _prev[0]->getActsGrad(), scaleTargets > 0);
+    }
 }
 
 void NeuronLayer::fpropActs(int inpIdx, float scaleTargets, PASS_TYPE passType) {
@@ -1138,11 +1146,7 @@ void BinxentCostLayer::fpropActs(int inpIdx, float scaleTargets, PASS_TYPE passT
 }
 
 void BinxentCostLayer::bpropActs(NVMatrix& v, int inpIdx, float scaleTargets, PASS_TYPE passType) {
-    assert(inpIdx == 1);
-    NVMatrix& labels = _prev[0]->getActs();
-    NVMatrix& probs = _prev[1]->getActs();
-    NVMatrix& target = _prev[1]->getActsGrad();
-    computeBinxentGrad(labels, probs, target, scaleTargets == 1, _coeff);
+    // Let logistic neurong layer to handle this.
 }
 
 /*

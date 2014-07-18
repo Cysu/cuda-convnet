@@ -107,12 +107,13 @@ class DataProvider:
         #cls.dp_classes['default'] = DataProvider
         type = type or DataProvider.get_batch_meta(data_dir)['dp_type'] # allow data to decide data provider
         if type.startswith("dummy-"):
-            name = "-".join(type.split('-')[:-1]) + "-n"
+            name = "-".join(type.split('-')[:-2]) + "-n" + "-l"
             if name not in dp_types:
                 raise DataProviderException("No such data provider: %s" % type)
             _class = dp_classes[name]
-            dims = int(type.split('-')[-1])
-            return _class(dims)
+            dims = int(type.split('-')[-2])
+            labels = int(type.split('-')[-1])
+            return _class(dims, labels)
         elif type in dp_types:
             _class = dp_classes[type]
             return _class(data_dir, batch_range, init_epoch, init_batchnum, dp_params, test)
@@ -245,14 +246,15 @@ dp_types = {"default": "The default data provider; loads one batch into memory a
             "memory": "Loads the entire dataset into memory",
             "labeled": "Returns data and labels (used by classifiers)",
             "labeled-memory": "Combination labeled + memory",
-            "dummy-n": "Dummy data provider for n-dimensional data",
-            "dummy-labeled-n": "Labeled dummy data provider for n-dimensional data"}
+            "dummy-n-l": "Dummy data provider for n-dimensional data and l-dimensional labels",
+            "dummy-labeled-n-l": "Labeled dummy data provider for n-dimensional data and l-dimensional labels"}
 dp_classes = {"default": DataProvider,
               "memory": MemoryDataProvider,
               "labeled": LabeledDataProvider,
               "labeled-memory": LabeledMemoryDataProvider,
-              "dummy-n": DummyDataProvider,
-              "dummy-labeled-n": LabeledDummyDataProvider}
+              "dummy-n-l": DummyDataProvider,
+              "dummy-labeled-n-l": LabeledDummyDataProvider}
 
 class DataProviderException(Exception):
     pass
+

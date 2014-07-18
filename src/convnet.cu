@@ -267,9 +267,46 @@ double ConvNet::getCostValue() {
 void ConvNet::checkGradients() {
     _numFailures = 0;
     _numTests = 0;
+
     fprop(0, PASS_GC);
     _baseErr = getCostValue();
     bprop(PASS_GC);
+
+    /*
+    cout << "data" << endl;
+    _layers[0]->getActs().print(1, 5);
+    cout << endl << "label" << endl;
+    _layers[1]->getActs().print(5, 1);
+    cout << endl;
+
+    for (vector<Layer*>::iterator it = _layers.begin(); it != _layers.end(); ++it) {
+        if ((*it)->getType() == "fc") {
+            cout << (*it)->getName() << " weights" << endl;
+            (dynamic_cast<WeightLayer*>(*it))->getWeights(0).getW().print(5, 5);
+            cout << endl;
+        }
+    }
+
+
+    for (vector<Layer*>::iterator it = _layers.begin(); it != _layers.end(); ++it) {
+        if ((*it)->getType() == "fc" || (*it)->getType() == "neuron") {
+            cout << (*it)->getName() << " outputs" << endl;
+            (*it)->getActs().print(1, 5);
+            cout << endl;
+        }
+    }
+
+    for (vector<Layer*>::iterator it = _layers.begin(); it != _layers.end(); ++it) {
+        if ((*it)->getType() == "fc") {
+            cout << (*it)->getName() << " grads" << endl;
+            (dynamic_cast<WeightLayer*>(*it))->getWeights(0).getInc().print(5, 5);
+            cout << endl;
+        }
+    }
+    
+    cout << "cost" << endl;
+    cout << _baseErr << endl;
+    */
 
     for (vector<Layer*>::iterator it = _layers.begin(); it != _layers.end(); ++it) {
         (*it)->checkGradients();
