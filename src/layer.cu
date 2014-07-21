@@ -1166,3 +1166,4 @@ void SumOfSquaresCostLayer::fpropActs(int inpIdx, float scaleTargets, PASS_TYPE 
 void SumOfSquaresCostLayer::bpropActs(NVMatrix& v, int inpIdx, float scaleTargets, PASS_TYPE passType) {
     _prev[inpIdx]->getActsGrad().add(*_inputs[0], scaleTargets, -2 * _coeff);
 }
+

@@ -28,7 +28,7 @@ import numpy as n
 import random as r
 
 
-class CroppedOnlineMultiClassDataProvider(LabeledDataProvider):
+class CroppedOnlineMultiTaskDataProvider(LabeledDataProvider):
     def __init__(self, data_dir, batch_range=None, init_epoch=1, init_batchnum=None, dp_params=None, test=False):
         LabeledDataProvider.__init__(self, data_dir, batch_range, init_epoch, init_batchnum, dp_params, test)
 
@@ -39,6 +39,7 @@ class CroppedOnlineMultiClassDataProvider(LabeledDataProvider):
         self.multiview = dp_params['multiview_test'] and test
         self.num_views = 5 * 2
         self.data_mult = self.num_views if self.multiview else 1
+        self.label_types = self.batch_meta['label_types']
         
         self.batches_generated = 0
         self.data_mean = self.batch_meta['data_mean'].reshape((self.num_colors, self.outer_size, self.outer_size))
@@ -51,20 +52,25 @@ class CroppedOnlineMultiClassDataProvider(LabeledDataProvider):
     def get_next_batch(self):
         epoch, batchnum, datadic = DataProvider.get_next_batch(self)
 
-        m = self.batch_meta['num_cases_per_batch']
-
         datadic['data'] = n.require(datadic['data'], dtype=n.single, requirements='C')
-        datadic['labels'] = n.require(n.tile(datadic['labels'].reshape((1, m)), (1, self.data_mult)), dtype=n.single, requirements='C')
+        datadic['labels'] = [n.require(n.tile(L, (1, self.data_mult)), dtype=n.single, requirements='C') for L in datadic['labels']]
 
         cropped = self.cropped_data[self.batches_generated % 2]
 
         self._trim_borders(datadic['data'], cropped)
         cropped -= self.data_mean
         self.batches_generated += 1
-        return epoch, batchnum, [cropped, datadic['labels']]
+        return epoch, batchnum, [cropped] + datadic['labels']
         
     def get_data_dims(self, idx=0):
-        return self.inner_size**2 * 3 if idx == 0 else 1
+        if idx == 0:
+            return self.inner_size**2 * 3
+        elif self.label_types[idx - 1] == 'multi-class':
+            return 1
+        elif self.label_types[idx - 1] == 'multi-label':
+            return len(self.label_names[idx - 1])
+        else:
+            raise ValueError("Invalid label_types in batch_meta")
 
     def _trim_borders(self, x, target):
         y = x.reshape(self.num_colors, self.outer_size, self.outer_size, x.shape[1])
@@ -92,7 +98,7 @@ class CroppedOnlineMultiClassDataProvider(LabeledDataProvider):
                 target[:,c] = pic.reshape((self.get_data_dims(),))
 
 
-class CroppedOnlineMultiLabelDataProvider(LabeledDataProvider):
+class CroppedOnlineDataProvider(LabeledDataProvider):
     def __init__(self, data_dir, batch_range=None, init_epoch=1, init_batchnum=None, dp_params=None, test=False):
         LabeledDataProvider.__init__(self, data_dir, batch_range, init_epoch, init_batchnum, dp_params, test)
 
@@ -103,6 +109,7 @@ class CroppedOnlineMultiLabelDataProvider(LabeledDataProvider):
         self.multiview = dp_params['multiview_test'] and test
         self.num_views = 5 * 2
         self.data_mult = self.num_views if self.multiview else 1
+        self.label_types = self.batch_meta['label_types']
         
         self.batches_generated = 0
         self.data_mean = self.batch_meta['data_mean'].reshape((self.num_colors, self.outer_size, self.outer_size))
@@ -126,7 +133,14 @@ class CroppedOnlineMultiLabelDataProvider(LabeledDataProvider):
         return epoch, batchnum, [cropped, datadic['labels']]
         
     def get_data_dims(self, idx=0):
-        return self.inner_size**2 * 3 if idx == 0 else self.get_num_classes()
+        if idx == 0:
+            return self.inner_size**2 * 3
+        elif self.label_types == 'multi-class':
+            return 1
+        elif self.label_types == 'multi-label':
+            return self.get_num_classes()
+        else:
+            raise ValueError("Invalid label_types in batch_meta")
 
     def _trim_borders(self, x, target):
         y = x.reshape(self.num_colors, self.outer_size, self.outer_size, x.shape[1])
@@ -152,7 +166,6 @@ class CroppedOnlineMultiLabelDataProvider(LabeledDataProvider):
                 if nr.randint(2) == 0: # also flip the image with 50% probability
                     pic = pic[:,:,::-1]
                 target[:,c] = pic.reshape((self.get_data_dims(),))
- 
 
 class CIFARDataProvider(LabeledMemoryDataProvider):
     def __init__(self, data_dir, batch_range, init_epoch=1, init_batchnum=None, dp_params={}, test=False):

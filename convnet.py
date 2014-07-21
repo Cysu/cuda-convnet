@@ -152,6 +152,7 @@ class ConvNet(IGPUModel):
                 elif type(l['weights']) == list:
                     print ""
                     print NL.join("Layer '%s' weights[%d]: %e [%e]" % (l['name'], i, n.mean(n.abs(w)), n.mean(n.abs(wi))) for i,(w,wi) in enumerate(zip(l['weights'],l['weightsInc']))),
+            if 'biases' in l:
                 print "%sLayer '%s' biases: %e [%e]" % (NL, l['name'], n.mean(n.abs(l['biases'])), n.mean(n.abs(l['biasesInc']))),
         print ""
 
@@ -192,8 +193,8 @@ class ConvNet(IGPUModel):
         DataProvider.register_data_provider('cifar', 'CIFAR', CIFARDataProvider)
         DataProvider.register_data_provider('dummy-cn-n', 'Dummy ConvNet', DummyConvNetDataProvider)
         DataProvider.register_data_provider('cifar-cropped', 'Cropped CIFAR', CroppedCIFARDataProvider)
-        DataProvider.register_data_provider('online-multi-label-cropped', 'Cropped Online MultiLabel', CroppedOnlineMultiLabelDataProvider)
-        DataProvider.register_data_provider('online-multi-class-cropped', 'Cropped Online MultiClass', CroppedOnlineMultiClassDataProvider)
+        DataProvider.register_data_provider('online-cropped', 'Cropped Online', CroppedOnlineDataProvider)
+        DataProvider.register_data_provider('online-multi-task-cropped', 'Cropped Online Multi Task', CroppedOnlineMultiTaskDataProvider)
         DataProvider.register_data_provider('dummy-cn-multi-label-n-l', 'Dummy ConvNet Multi Label', DummyConvNetMultiLabelDataProvider)
 
         return op

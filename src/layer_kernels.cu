@@ -47,6 +47,12 @@ __global__ void kLogregCost(float* probs, float* labels, float* maxProbs, float*
         const float maxp = maxProbs[tx];
         const float labelp = probs[label * numCases + tx];
 
+        if (label == -1) {
+            labelLogProbs[tx] = 0;
+            correctProbs[tx] = 1;
+            return;
+        }
+
         labelLogProbs[tx] = __logf(labelp);
 
         /*
@@ -89,6 +95,10 @@ __global__ void kLogregCostGrad(float* y_l, float* labels, float* dE_dy_l, const
 
     if (ty < numOut && tx < numCases) {
         const int label = int(labels[tx]);
+        if (label == -1) {
+            if (!add) dE_dy_l[tidx] = 0;
+            return;
+        }
         float v = gradCoeff * (label == ty);
         v = __fdividef(v, y_l[tidx]);
         if (add) {
@@ -224,6 +234,10 @@ __global__ void kLogregSoftmaxGrad(float* y_l, float* labels, float* dE_dx_l, co
 
     if (ty < numOut && tx < numCases) {
         const int label = int(labels[tx]);
+        if (label == -1) {
+            if (!add) dE_dx_l[tidx] = 0;
+            return;
+        }
         float v = gradCoeff * ((label == ty) - y_l[tidx]);
         if (add) {
             dE_dx_l[tidx] += v;

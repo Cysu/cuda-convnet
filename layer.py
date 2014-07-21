@@ -1248,9 +1248,11 @@ class LogregCostParser(CostParser):
             raise LayerParsingError("Layer '%s': dimensionality of first input must be 1" % name)
         if prev_layers[dic['inputs'][1]]['type'] != 'softmax' and prev_layers[dic['inputs'][1]]['type'] != 'condprob':
             raise LayerParsingError("Layer '%s': second input must be softmax or condprob layer" % name)
+        '''
         if dic['numInputs'][1] != model.train_data_provider.get_num_classes():
             raise LayerParsingError("Layer '%s': softmax input '%s' must produce %d outputs, because that is the number of classes in the dataset" \
                                     % (name, prev_layers[dic['inputs'][1]]['name'], model.train_data_provider.get_num_classes()))
+        '''
         
         print "Initialized logistic regression cost '%s'" % name
         return dic
