@@ -1265,9 +1265,6 @@ class BinxentCostParser(CostParser):
         dic = CostParser.parse(self, name, mcp, prev_layers, model)
         if dic['numInputs'][0] != dic['numInputs'][1]:
             raise LayerParsingError("Layer '%s': input layers must have same output shape" % (name))
-        if dic['numInputs'][0] != model.train_data_provider.get_num_classes():
-            raise LayerParsingError("Layer '%s': input layers must product %d outputs" % (name, model.train_data_provider.get_num_classes()))
-
         print "Initialized binary cross entropy cost '%s'" % name
         return dic
     
@@ -1277,6 +1274,8 @@ class SumOfSquaresCostParser(CostParser):
         
     def parse(self, name, mcp, prev_layers, model):
         dic = CostParser.parse(self, name, mcp, prev_layers, model)
+        if dic['numInputs'][0] != dic['numInputs'][1]:
+            raise LayerParsingError("Layer '%s': input layers must have same output shape" % (name))
         print "Initialized sum-of-squares cost '%s'" % name
         return dic
 

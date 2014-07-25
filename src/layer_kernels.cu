@@ -28,6 +28,9 @@
 
 #include <layer_kernels.cuh>
 
+using std::pair;
+using std::make_pair;
+
 /*
  * E = -log(y_t)
  * probs:           (numOut, numCases)
@@ -116,7 +119,7 @@ __global__ void kLogregCostGrad(float* y_l, float* labels, float* dE_dy_l, const
  * labelLogProbs:   (numOut, numCases)   (*out)
  * correct:         (numOut, numCases)   (*out)
  */
-__global__ void kBinxentCost(float* probs, float* labels, float* labelLogProbs, float* correct, const int numCases, const int numOut) {
+__global__ void kBinxentCost(float* probs, float* labels, float* labelLogProbs, float* tp, float* fp, float* tn, float* fn, const int numCases, const int numOut) {
     const int tx = blockIdx.x * LOGREG_GRAD_THREADS_X + threadIdx.x;
     const int ty = blockIdx.y * LOGREG_GRAD_THREADS_Y + threadIdx.y;
     const int tidx = ty * numCases + tx;
@@ -125,12 +128,29 @@ __global__ void kBinxentCost(float* probs, float* labels, float* labelLogProbs, 
         const int label = int(labels[tidx]);
         const float prob = probs[tidx];
 
+        tp[tidx] = fp[tidx] = tn[tidx] = fn[tidx] = 0;
+
+        if (label == -1) {
+            // This sample has no labels
+            labelLogProbs[tidx] = 0;
+            tn[tidx] = 1.f;
+            return;
+        }
+
         if (label == 1) {
             labelLogProbs[tidx] = __logf(prob);
-            correct[tidx] = (prob > 0.5);
+            if (prob > 0.5f) {
+                tp[tidx] = 1.f;
+            } else {
+                fn[tidx] = 1.f;
+            }
         } else if (label == 0) {
             labelLogProbs[tidx] = __logf(1.f - prob);
-            correct[tidx] = (prob < 0.5);
+            if (prob <= 0.5f) {
+                tn[tidx] = 1.f;
+            } else {
+                fp[tidx] = 1.f;
+            }
         } else {
             // Should not occur
         }
@@ -147,6 +167,12 @@ __global__ void kBinxentCostGrad(float* probs, float* labels, float* grads, cons
         const int label = int(labels[tidx]);
         const float prob = probs[tidx];
         float v = gradCoeff;
+
+        if (label == -1) {
+            // This sample has no labels
+            if (!add) grads[tidx] = 0;
+            return;
+        }
 
         if (label == 1) {
             v = __fdividef(v, prob);
@@ -174,6 +200,12 @@ __global__ void kBinxentLogisticCostGrad(float* probs, float* labels, float* gra
         const int label = int(labels[tidx]);
         const float prob = probs[tidx];
         float v = gradCoeff;
+
+        if (label == -1) {
+            // This sample has no labels
+            if (!add) grads[tidx] = 0;
+            return;
+        }
 
         if (label == 1) {
             v = 1.f - prob;
@@ -347,7 +379,7 @@ void computeLogregGrad(NVMatrix& labels, NVMatrix& probs, NVMatrix& target, bool
  * labelLogProbs:   (numOut, numCases)   (*out)
  * correct:         (numOut, numCases)   (*out)
  */
-void computeBinxentCost(NVMatrix& labels, NVMatrix& probs, NVMatrix& labelLogProbs_out, NVMatrix& correct_out) {
+pair<float, float> computeBinxentCost(NVMatrix& labels, NVMatrix& probs, NVMatrix& labelLogProbs_out) {
     int numCases = probs.getLeadingDim();
     int numOut = probs.getFollowingDim();
 
@@ -359,13 +391,26 @@ void computeBinxentCost(NVMatrix& labels, NVMatrix& probs, NVMatrix& labelLogPro
     assert(probs.isContiguous());
 
     labelLogProbs_out.resize(numOut, numCases);
-    correct_out.resize(numOut, numCases);
+
+    NVMatrix tp(numOut, numCases);
+    NVMatrix fp(numOut, numCases);
+    NVMatrix tn(numOut, numCases);
+    NVMatrix fn(numOut, numCases);
 
     dim3 threads(LOGREG_GRAD_THREADS_X, LOGREG_GRAD_THREADS_Y);
     dim3 blocks(DIVUP(numCases, LOGREG_GRAD_THREADS_X), DIVUP(numOut, LOGREG_GRAD_THREADS_Y));
-    kBinxentCost<<<blocks, threads>>>(probs.getDevData(), labels.getDevData(), labelLogProbs_out.getDevData(), correct_out.getDevData(), numCases, numOut);
+    kBinxentCost<<<blocks, threads>>>(probs.getDevData(), labels.getDevData(), labelLogProbs_out.getDevData(), tp.getDevData(), fp.getDevData(), tn.getDevData(), fn.getDevData(), numCases, numOut);
 
     getLastCudaError("computeBinxentCost: Kernel execution failed");
+
+    float p_sum = tp.sum() + fn.sum();
+    float n_sum = fp.sum() + tn.sum();
+
+    float tpr = 1.f, fpr = 0.f;
+    if (p_sum != 0) tpr = tp.sum() / p_sum;
+    if (n_sum != 0) fpr = fp.sum() / n_sum;
+
+    return make_pair(tpr, fpr);
 }
 
 void computeBinxentGrad(NVMatrix& labels, NVMatrix& probs, NVMatrix& target, bool add, float coeff) {

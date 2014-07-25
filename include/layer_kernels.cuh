@@ -29,6 +29,7 @@
 
 #include <helper_cuda.h>
 #include <nvmatrix.cuh>
+#include <utility>
 
 #define LOGREG_GRAD_THREADS_X      32
 #define LOGREG_GRAD_THREADS_Y      4
@@ -38,7 +39,7 @@
 
 void computeLogregCost(NVMatrix& labels, NVMatrix& probs, NVMatrix& labelLogProbs_out, NVMatrix& correctProbs_out);
 void computeLogregGrad(NVMatrix& labels, NVMatrix& probs, NVMatrix& target, bool add, float coeff);
-void computeBinxentCost(NVMatrix& labels, NVMatrix& probs, NVMatrix& labelLogProbs_out, NVMatrix& correct_out);
+std::pair<float, float> computeBinxentCost(NVMatrix& labels, NVMatrix& probs, NVMatrix& labelLogProbs_out);
 void computeBinxentGrad(NVMatrix& labels, NVMatrix& probs, NVMatrix& target, bool add, float coeff);
 void computeSoftmaxGrad(NVMatrix& acts, NVMatrix& actsGrad, NVMatrix& target, bool add);
 

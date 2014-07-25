@@ -1136,17 +1136,19 @@ void BinxentCostLayer::fpropActs(int inpIdx, float scaleTargets, PASS_TYPE passT
     if (inpIdx == 0) {
         NVMatrix& labels = *_inputs[0];
         NVMatrix& probs = *_inputs[1];
-        NVMatrix& labelLogProbs = getActs(), correct;
+        NVMatrix& labelLogProbs = getActs();
+        int numCases = probs.getLeadingDim();
         int numOut = probs.getFollowingDim();
-        computeBinxentCost(labels, probs, labelLogProbs, correct);
+        pair<float, float> stats = computeBinxentCost(labels, probs, labelLogProbs);
         _costv.clear();
         _costv.push_back(-labelLogProbs.sum());
-        _costv.push_back((correct.getNumElements() - correct.sum()) / numOut);
+        _costv.push_back(stats.first * numCases);
+        _costv.push_back(stats.second * numCases);
     }
 }
 
 void BinxentCostLayer::bpropActs(NVMatrix& v, int inpIdx, float scaleTargets, PASS_TYPE passType) {
-    // Let logistic neurong layer to handle this.
+    // Let logistic neuron layer to handle this.
 }
 
 /*

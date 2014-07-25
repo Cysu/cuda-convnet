@@ -22,8 +22,9 @@
 # NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
 # EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+import os
 import numpy as n
-from numpy.random import randn, rand, random_integers, binomial
+from numpy.random import randn, rand, random_integers, binomial, randint
 import os
 from util import *
 
@@ -77,7 +78,12 @@ class DataProvider:
                 except IndexError:
                     break
         else:
-            dic = unpickle(self.get_data_file_name(batch_num))
+            # TODO: It is just for getting hdfs file faster. Fix this part later.
+            tmpname = '/home/vis/xiaotong/baidu/build/convnet/cache/{}'.format(randint(123456789))
+            os.system('/home/vis/xiaotong/from_liaojie/hadoop/bin/hadoop fs -get /app/mmt-vis/xiaotong/batches/500w-mix/data_batch_{0} '.format(batch_num) + tmpname)
+            dic = unpickle(tmpname)
+            os.remove(tmpname)
+            #dic = unpickle(self.get_data_file_name(batch_num))
         return dic
 
     def get_data_dims(self):

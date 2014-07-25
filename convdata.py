@@ -22,6 +22,8 @@
 # NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
 # EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+from time import time
+
 from data import *
 import numpy.random as nr
 import numpy as n
@@ -39,7 +41,9 @@ class CroppedOnlineMultiTaskDataProvider(LabeledDataProvider):
         self.multiview = dp_params['multiview_test'] and test
         self.num_views = 5 * 2
         self.data_mult = self.num_views if self.multiview else 1
+
         self.label_types = self.batch_meta['label_types']
+        self.label_names = self.batch_meta['label_names']
         
         self.batches_generated = 0
         self.data_mean = self.batch_meta['data_mean'].reshape((self.num_colors, self.outer_size, self.outer_size))
@@ -52,7 +56,19 @@ class CroppedOnlineMultiTaskDataProvider(LabeledDataProvider):
     def get_next_batch(self):
         epoch, batchnum, datadic = DataProvider.get_next_batch(self)
 
-        datadic['data'] = n.require(datadic['data'], dtype=n.single, requirements='C')
+        # datadic['data'] = n.require(datadic['data'], dtype=n.single, requirements='C')
+        datadic['data'] = datadic['data'].astype(n.single) # 30x faster
+
+        # Set all-zero multi-label samples to -1
+        # TODO: Should be done when generating data batches
+        for i, l in enumerate(datadic['labels']):
+            if self.label_types[i] == 'multi-class':
+                continue
+            col_sum = l.sum(axis=0)
+            bad_inds = n.where(col_sum == 0)[0]
+            l = l.astype(n.float32)
+            l[:, bad_inds] = -1
+
         datadic['labels'] = [n.require(n.tile(L, (1, self.data_mult)), dtype=n.single, requirements='C') for L in datadic['labels']]
 
         cropped = self.cropped_data[self.batches_generated % 2]
@@ -96,7 +112,6 @@ class CroppedOnlineMultiTaskDataProvider(LabeledDataProvider):
                 if nr.randint(2) == 0: # also flip the image with 50% probability
                     pic = pic[:,:,::-1]
                 target[:,c] = pic.reshape((self.get_data_dims(),))
-
 
 class CroppedOnlineDataProvider(LabeledDataProvider):
     def __init__(self, data_dir, batch_range=None, init_epoch=1, init_batchnum=None, dp_params=None, test=False):

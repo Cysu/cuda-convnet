@@ -100,7 +100,7 @@ class IGPUModel:
         self.dp_params['convnet'] = self
         try:
             self.test_data_provider = DataProvider.get_instance(self.data_path, self.test_batch_range,
-                                                                type=self.dp_type, dp_params=self.dp_params, test=True)
+                                                                    type=self.dp_type, dp_params=self.dp_params, test=True)
             self.train_data_provider = DataProvider.get_instance(self.data_path, self.train_batch_range,
                                                                      self.model_state["epoch"], self.model_state["batchnum"],
                                                                      type=self.dp_type, dp_params=self.dp_params, test=False)
@@ -148,15 +148,17 @@ class IGPUModel:
             batch_output = self.finish_batch()
             self.train_outputs += [batch_output]
             self.print_train_results()
+            self.print_train_time(time() - compute_time_py)
 
             if self.get_num_batches_done() % self.testing_freq == 0:
+                t0 = time()
                 self.sync_with_host()
                 self.test_outputs += [self.get_test_error()]
                 self.print_test_results()
                 self.print_test_status()
                 self.conditional_save()
+                self.print_train_time(time() - t0)
 
-            self.print_train_time(time() - compute_time_py)
         self.cleanup()
 
     def cleanup(self):
