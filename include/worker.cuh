@@ -95,10 +95,10 @@ public:
 
 class FeatureWorker : public DataWorker {
 protected:
-    Matrix* _ftrs;
-    int _layerIdx;
+    MatrixV _ftrs;
+    intv _layerIdx;
 public:
-    FeatureWorker(ConvNet& convNet, CPUData& data, Matrix& ftrs, int layerIdx);
+    FeatureWorker(ConvNet& convNet, CPUData& data, MatrixV& ftrs, intv layerIdx);
     ~FeatureWorker();
     void run();
 };

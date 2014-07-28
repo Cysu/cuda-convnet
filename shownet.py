@@ -25,6 +25,7 @@
 import numpy
 import sys
 import getopt as opt
+from copy import deepcopy
 from util import *
 from math import sqrt, ceil, floor
 import os
@@ -70,7 +71,8 @@ class ShowConvNet(ConvNet):
         if self.op.get_value('show_preds'):
             self.sotmax_idx = self.get_layer_idx(self.op.get_value('show_preds'), check_type='softmax')
         if self.op.get_value('write_features'):
-            self.ftr_layer_idx = self.get_layer_idx(self.op.get_value('write_features'))
+            layers = self.op.get_value('write_features').split(',')
+            self.ftr_layer_idx = map(self.get_layer_idx, layers)
 
     def init_model_lib(self):
         if self.need_gpu:
@@ -195,10 +197,9 @@ class ShowConvNet(ConvNet):
             rand_idx = nr.randint(0, data[0].shape[1], NUM_IMGS)
             data[0] = n.require(data[0][:,rand_idx], requirements='C')
             data[1] = n.require(data[1][:,rand_idx], requirements='C')
-        data += [preds]
 
         # Run the model
-        self.libmodel.startFeatureWriter(data, self.sotmax_idx)
+        self.libmodel.startFeatureWriter(data, [preds], [self.sotmax_idx])
         self.finish_batch()
 
         fig = pl.figure(3)
@@ -242,19 +243,37 @@ class ShowConvNet(ConvNet):
             os.makedirs(self.feature_path)
         next_data = self.get_next_batch(train=False)
         b1 = next_data[1]
-        num_ftrs = self.layers[self.ftr_layer_idx]['outputs']
+        num_ftrs = [self.layers[i]['outputs'] for i in self.ftr_layer_idx]
         while True:
             batch = next_data[1]
             data = next_data[2]
-            ftrs = n.zeros((data[0].shape[1], num_ftrs), dtype=n.single)
-            self.libmodel.startFeatureWriter(data + [ftrs], self.ftr_layer_idx)
+            files = deepcopy(next_data[3]) if len(next_data) == 4 else None
+            ftrs = [n.zeros((data[0].shape[1], k), dtype=n.single) for k in num_ftrs]
+            self.libmodel.startFeatureWriter(data, ftrs, self.ftr_layer_idx)
 
             # load the next batch while the current one is computing
             next_data = self.get_next_batch(train=False)
             self.finish_batch()
             path_out = os.path.join(self.feature_path, 'data_batch_%d' % batch)
-            pickle(path_out, {'data': ftrs, 'labels': data[1]})
+
+            # save as single value when single-task
+            # save as list of values when multi-task 
+            # transpose the labels to make them n_samples x n_dims
+            if len(data) == 2:
+                labels = data[1].T
+            else:
+                labels = [d.T for d in data[1:]]
+            
+            if len(ftrs) == 1:
+                ftrs = ftrs[0]
+
+            # check if the filenames are provided
+            if files is None:
+                pickle(path_out, {'labels': labels, 'features': ftrs})
+            else:
+                pickle(path_out, {'labels': labels, 'features': ftrs, 'files': files})
             print "Wrote feature file %s" % path_out
+
             if next_data[1] == b1:
                 break
         pickle(os.path.join(self.feature_path, 'batches.meta'), {'source_model':self.load_file,

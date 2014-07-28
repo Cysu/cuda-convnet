@@ -76,7 +76,7 @@ class CroppedOnlineMultiTaskDataProvider(LabeledDataProvider):
         self._trim_borders(datadic['data'], cropped)
         cropped -= self.data_mean
         self.batches_generated += 1
-        return epoch, batchnum, [cropped] + datadic['labels']
+        return epoch, batchnum, [cropped] + datadic['labels'], datadic['files']
         
     def get_data_dims(self, idx=0):
         if idx == 0:

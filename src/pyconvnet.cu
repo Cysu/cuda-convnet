@@ -122,18 +122,20 @@ PyObject* startMultiviewTest(PyObject *self, PyObject *args) {
 
 PyObject* startFeatureWriter(PyObject *self, PyObject *args) {
     assert(model != NULL);
-    PyListObject* data;
-    int layerIdx;
-    if (!PyArg_ParseTuple(args, "O!i",
-        &PyList_Type, &data,
-        &layerIdx)) {
+    PyListObject* pyData;
+    PyListObject* pyFeatures;
+    PyListObject* pyLayerInds;
+    if (!PyArg_ParseTuple(args, "O!O!O!",
+        &PyList_Type, &pyData,
+        &PyList_Type, &pyFeatures,
+        &PyList_Type, &pyLayerInds)) {
         return NULL;
     }
-    MatrixV& mvec = *getMatrixV((PyObject*)data);
-    Matrix& ftrs = *mvec.back();
-    mvec.pop_back();
+    MatrixV& data = *getMatrixV((PyObject*)pyData);
+    MatrixV& features = *getMatrixV((PyObject*)pyFeatures);
+    intv& layerInds = *getIntV((PyObject*)pyLayerInds);
 
-    FeatureWorker* wr = new FeatureWorker(*model, *new CPUData(mvec), ftrs, layerIdx);
+    FeatureWorker* wr = new FeatureWorker(*model, *new CPUData(data), features, layerInds);
     model->getWorkerQueue().enqueue(wr);
     return Py_BuildValue("i", 0);
 }

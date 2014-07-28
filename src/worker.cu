@@ -178,37 +178,51 @@ void MultiviewTestWorker::run() {
  * FeatureWorker
  * ====================
  */
-FeatureWorker::FeatureWorker(ConvNet& convNet, CPUData& data, Matrix& ftrs, int layerIdx)
-    : DataWorker(convNet, data), _ftrs(&ftrs), _layerIdx(layerIdx) {
-    assert(ftrs.getNumRows() == data.getNumCases());
-    assert(!ftrs.isTrans());
+FeatureWorker::FeatureWorker(ConvNet& convNet, CPUData& data, MatrixV& ftrs, intv layerIdx)
+    : DataWorker(convNet, data), _ftrs(ftrs), _layerIdx(layerIdx) {
+    for (MatrixV::size_type i = 0; i < ftrs.size(); ++i) {
+        assert(ftrs[i]->getNumRows() == data.getNumCases());
+        assert(!ftrs[i]->isTrans());
+    }
 }
 
 FeatureWorker::~FeatureWorker() {
-    delete _ftrs;
+    for (MatrixV::size_type i = 0; i < _ftrs.size(); ++i) {
+        delete _ftrs[i];
+        _ftrs[i] = NULL;
+    }
 }
 
 void FeatureWorker::run() {
     _dp->setData(*_data);
-    Layer& ftrLayer = _convNet->getLayer(_layerIdx);
+    vector<Layer*> ftrLayers;
+    for (intv::size_type i = 0; i < _layerIdx.size(); ++i) {
+        ftrLayers.push_back(&(_convNet->getLayer(_layerIdx[i])));
+    }
     Cost& batchCost = *new Cost(0);
     for (int i = 0; i < _dp->getNumMinibatches(); i++) {
         _convNet->fprop(i, PASS_TEST);
         _convNet->getCost(batchCost);
-        Matrix& miniFtrs = _ftrs->sliceRows(i * _dp->getMinibatchSize(),
-                                            min(_dp->getNumCases(), (i + 1) * _dp->getMinibatchSize()));
-        NVMatrix& acts = ftrLayer.getActs();
-        NVMatrix acts_T;
-        if (acts.isTrans()) {
-            NVMatrix& soft_T = acts.getTranspose();
-            soft_T.transpose(acts_T);
-            delete &soft_T;
-        } else {
-            acts.transpose(acts_T);
+        for (MatrixV::size_type j = 0; j < _ftrs.size(); ++j) {
+            // Get a view of the data
+            Matrix& miniFtrs = _ftrs[j]->sliceRows(i * _dp->getMinibatchSize(),
+                                                   min(_dp->getNumCases(), (i + 1) * _dp->getMinibatchSize()));
+            NVMatrix& acts = ftrLayers[j]->getActs();
+            NVMatrix acts_T;
+            if (acts.isTrans()) {
+                NVMatrix& soft_T = acts.getTranspose();
+                soft_T.transpose(acts_T);
+                delete &soft_T;
+            } else {
+                acts.transpose(acts_T);
+            }
+            acts_T.copyToHost(miniFtrs);
+
+            // Delete the view but not the data
+            delete &miniFtrs;
         }
-        acts_T.copyToHost(miniFtrs);
-        delete &miniFtrs;
     }
     cudaThreadSynchronize();
     _convNet->getResultQueue().enqueue(new WorkResult(WorkResult::BATCH_DONE, batchCost));
 }
+
