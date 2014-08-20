@@ -1103,11 +1103,21 @@ void LogregCostLayer::fpropActs(int inpIdx, float scaleTargets, PASS_TYPE passTy
         NVMatrix& labels = *_inputs[0];
         NVMatrix& probs = *_inputs[1];
         int numCases = labels.getNumElements();
-        NVMatrix& trueLabelLogProbs = getActs(), correctProbs;
-        computeLogregCost(labels, probs, trueLabelLogProbs, correctProbs);
+        NVMatrix& trueLabelLogProbs = getActs(), correctProbs, validLabels;
+        computeLogregCost(labels, probs, trueLabelLogProbs, correctProbs, validLabels);
+
+        // There could be samples with no labels in some multi-task training.
+        // Cost and error should be scaled in this case.
+        float cost = -trueLabelLogProbs.sum();
+        float nCorrect = correctProbs.sum();
+        float nValid = validLabels.sum();
+        float error = 0;
+        if (nValid != 0) cost = cost / nValid * numCases;
+        if (nValid != 0) error = (nValid - nCorrect) / nValid * numCases;
+
         _costv.clear();
-        _costv.push_back(-trueLabelLogProbs.sum());
-        _costv.push_back(numCases - correctProbs.sum());
+        _costv.push_back(cost);
+        _costv.push_back(error);
     }
 }
 

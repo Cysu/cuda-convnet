@@ -22,6 +22,8 @@
 # NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
 # EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+import os
+import subprocess
 from time import time
 
 from data import *
@@ -58,16 +60,6 @@ class CroppedOnlineMultiTaskDataProvider(LabeledDataProvider):
 
         # datadic['data'] = n.require(datadic['data'], dtype=n.single, requirements='C')
         datadic['data'] = datadic['data'].astype(n.single) # 30x faster
-
-        # Set all-zero multi-label samples to -1
-        # TODO: Should be done when generating data batches
-        for i, l in enumerate(datadic['labels']):
-            if self.label_types[i] == 'multi-class':
-                continue
-            col_sum = l.sum(axis=0)
-            bad_inds = n.where(col_sum == 0)[0]
-            l = l.astype(n.float32)
-            l[:, bad_inds] = -1
 
         datadic['labels'] = [n.require(n.tile(L, (1, self.data_mult)), dtype=n.single, requirements='C') for L in datadic['labels']]
 
@@ -181,6 +173,31 @@ class CroppedOnlineDataProvider(LabeledDataProvider):
                 if nr.randint(2) == 0: # also flip the image with 50% probability
                     pic = pic[:,:,::-1]
                 target[:,c] = pic.reshape((self.get_data_dims(),))
+
+class HDFSCroppedOnlineMultiTaskDataProvider(CroppedOnlineMultiTaskDataProvider):
+    # TODO: It is just for getting hdfs file faster. Fix this part later.
+
+    def get_batch(self, batch_num):
+        tmpname = '/home/vis/xiaotong/baidu/build/convnet/cache/{}'.format(randint(123456789))
+        cmd = ['/home/vis/xiaotong/from_liaojie/hadoop/bin/hadoop', 'fs', '-get']
+        cmd.append(self.get_data_file_name(batch_num))
+        cmd.append(tmpname)
+        subprocess.call(cmd)
+        dic = unpickle(tmpname)
+        os.remove(tmpname)
+        return dic
+
+    @staticmethod
+    def get_batch_meta(data_dir):
+        tmpname = '/home/vis/xiaotong/baidu/build/convnet/cache/{}'.format(randint(123456789))
+        cmd = ['/home/vis/xiaotong/from_liaojie/hadoop/bin/hadoop', 'fs', '-get']
+        cmd.append(os.path.join(data_dir, 'batches.meta'))
+        cmd.append(tmpname)
+        subprocess.call(cmd)
+        dic = unpickle(tmpname)
+        os.remove(tmpname)
+        return dic
+
 
 class CIFARDataProvider(LabeledMemoryDataProvider):
     def __init__(self, data_dir, batch_range, init_epoch=1, init_batchnum=None, dp_params={}, test=False):

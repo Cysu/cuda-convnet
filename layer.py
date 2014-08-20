@@ -859,6 +859,7 @@ class CondProbLayerParser(LayerWithInputParser):
                 dic['weightsInc'] += [n.zeros_like(dic['weights'][i])]
                 print "Layer '%s[%d]' initialized weight matrices from function %s" % (dic['name'], i, dic['initWFunc'])
         else:
+            assert len(dic['inputs']) == 1
             for i in xrange(len(dic['inputs'])):
                 if dic['weightSourceLayerIndices'][i] >= 0: # Shared weight matrix
                     src_layer = self.prev_layers[dic['weightSourceLayerIndices'][i]] if dic['weightSourceLayerIndices'][i] < len(self.prev_layers) else dic
@@ -871,27 +872,29 @@ class CondProbLayerParser(LayerWithInputParser):
                         raise LayerParsingError("Layer '%s[%d]': weight matrix is not a probability matrix" % (dic['name'], i))
                     print "Layer '%s' initialized weight matrix %d from %s" % (dic['name'], i, dic['weightSource'][i])
                 else:
-                    if initW[i] == 'random':
+                    if initW == 'random':
                         dic['weights'] += [n.array(nr.rand(rows[i], cols[i]), dtype=n.single, order=order)]
                         dic['weights'][i] /= dic['weights'][i].sum(axis=0)
-                    elif initW[i] == 'identity':
+                    elif initW == 'identity':
                         if rows[i] != cols[i]:
                             raise LayerParsingError("Layer '%s[%d]': weight matrix cannot be set to Identity matrix since it is not square" % (dic['name'], i))
                         dic['weights'] += [n.array(n.identity(rows[i]), dtype=n.single, order=order)]
                     else:
-                        raise LayerParsingError("Layer '%s[%d]': weight matrix initW error; should be either random or identity" % (dic['name'], i))
+                        try:
+                            dic['weights'] += [n.matrix(initW, dtype=n.single)]
+                        except:
+                            raise LayerParsingError("Layer '%s[%d]': weight matrix initW error; should be either random or identity" % (dic['name'], i))
                     dic['weightsInc'] += [n.zeros_like(dic['weights'][i])]
         
     def parse(self, name, mcp, prev_layers, model):
         dic = LayerWithInputParser.parse(self, name, mcp, prev_layers, model)
         dic['requiresParams'] = True
         dic['gradConsumer'] = True
-        dic['initW'] = mcp.safe_get_list(name, 'initW', default="random")
+        dic['initW'] = mcp.safe_get(name, 'initW', default="random")
         dic['initWFunc'] = mcp.safe_get(name, 'initWFunc', default="")
         # Find shared weight matrices
         
-        dic['weightSource'] = mcp.safe_get_list(name, 'weightSource', default=[''] * len(dic['inputs']))
-        self.verify_num_params(['initW', 'weightSource'])
+        dic['weightSource'] = ['']
         
         prev_names = map(lambda x: x['name'], prev_layers)
         dic['weightSourceLayerIndices'] = []

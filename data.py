@@ -78,12 +78,7 @@ class DataProvider:
                 except IndexError:
                     break
         else:
-            # TODO: It is just for getting hdfs file faster. Fix this part later.
-            tmpname = '/home/vis/xiaotong/baidu/build/convnet/cache/{}'.format(randint(123456789))
-            os.system('/home/vis/xiaotong/from_liaojie/hadoop/bin/hadoop fs -get /app/mmt-vis/xiaotong/batches/500w-mix/data_batch_{0} '.format(batch_num) + tmpname)
-            dic = unpickle(tmpname)
-            os.remove(tmpname)
-            #dic = unpickle(self.get_data_file_name(batch_num))
+            dic = unpickle(self.get_data_file_name(batch_num))
         return dic
 
     def get_data_dims(self):

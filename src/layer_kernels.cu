@@ -41,7 +41,7 @@ using std::make_pair;
  *
  * target:          (1, numCases)
  */
-__global__ void kLogregCost(float* probs, float* labels, float* maxProbs, float* labelLogProbs, float* correctProbs,
+__global__ void kLogregCost(float* probs, float* labels, float* maxProbs, float* labelLogProbs, float* correctProbs, float* validLabels,
                             const int numCases, const int numOut) {
     const int tx = blockIdx.x * LOGREG_ERR_THREADS_X + threadIdx.x;
 
@@ -52,11 +52,13 @@ __global__ void kLogregCost(float* probs, float* labels, float* maxProbs, float*
 
         if (label == -1) {
             labelLogProbs[tx] = 0;
-            correctProbs[tx] = 1;
+            correctProbs[tx] = 0;
+            validLabels[tx] = 0;
             return;
         }
 
         labelLogProbs[tx] = __logf(labelp);
+        validLabels[tx] = 1;
 
         /*
          * Compute the probability of guessing the correct case if you take the most-probable label.
@@ -323,7 +325,7 @@ void computeEltwiseMaxGrad(NVMatrix& actGrad, NVMatrix& input, NVMatrix& output,
  *
  * target:          (1, numCases)
  */
-void computeLogregCost(NVMatrix& labels, NVMatrix& probs, NVMatrix& labelLogProbs_out, NVMatrix& correctProbs_out) {
+void computeLogregCost(NVMatrix& labels, NVMatrix& probs, NVMatrix& labelLogProbs_out, NVMatrix& correctProbs_out, NVMatrix& validLabels_out) {
     int numCases = probs.getNumCols();
     int numOut = probs.getNumRows();
 
@@ -337,11 +339,13 @@ void computeLogregCost(NVMatrix& labels, NVMatrix& probs, NVMatrix& labelLogProb
 
     labelLogProbs_out.resize(1, numCases);
     correctProbs_out.resize(1, numCases);
+    validLabels_out.resize(1, numCases);
+
     dim3 threads(LOGREG_ERR_THREADS_X, 1);
     dim3 blocks(DIVUP(numCases, LOGREG_ERR_THREADS_X), 1);
     cudaFuncSetCacheConfig(kLogregCost, cudaFuncCachePreferL1);
     kLogregCost<<<blocks, threads>>>(probs.getDevData(), labels.getDevData(), maxProbs.getDevData(),
-                                     labelLogProbs_out.getDevData(), correctProbs_out.getDevData(),
+                                     labelLogProbs_out.getDevData(), correctProbs_out.getDevData(), validLabels_out.getDevData(),
                                      numCases, numOut);
     getLastCudaError("computeLogregCost: Kernel execution failed");
 //    cudaThreadSynchronize();

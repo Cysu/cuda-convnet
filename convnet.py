@@ -125,7 +125,7 @@ class ConvNet(IGPUModel):
 
     def print_costs(self, cost_outputs):
         costs, num_cases = cost_outputs[0], cost_outputs[1]
-        for errname in costs.keys():
+        for errname in sorted(costs.keys()):
             costs[errname] = [(v/num_cases) for v in costs[errname]]
             print "%s: " % errname,
             print ", ".join("%6f" % v for v in costs[errname]),
@@ -195,6 +195,7 @@ class ConvNet(IGPUModel):
         DataProvider.register_data_provider('cifar-cropped', 'Cropped CIFAR', CroppedCIFARDataProvider)
         DataProvider.register_data_provider('online-cropped', 'Cropped Online', CroppedOnlineDataProvider)
         DataProvider.register_data_provider('online-multi-task-cropped', 'Cropped Online Multi Task', CroppedOnlineMultiTaskDataProvider)
+        DataProvider.register_data_provider('hdfs-online-multi-task-cropped', 'HDFS Cropped Online Multi Task', HDFSCroppedOnlineMultiTaskDataProvider)
         DataProvider.register_data_provider('dummy-cn-multi-label-n-l', 'Dummy ConvNet Multi Label', DummyConvNetMultiLabelDataProvider)
 
         return op
