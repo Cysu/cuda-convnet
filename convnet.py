@@ -125,6 +125,11 @@ class ConvNet(IGPUModel):
 
     def print_costs(self, cost_outputs):
         costs, num_cases = cost_outputs[0], cost_outputs[1]
+        """
+        print "num_cases =", num_cases
+        for errname in sorted(costs.keys()):
+            print errname, ' '.join("%6f" % v for v in costs[errname])
+        """
         for errname in sorted(costs.keys()):
             costs[errname] = [(v/num_cases) for v in costs[errname]]
             print "%s: " % errname,

@@ -1111,9 +1111,11 @@ void LogregCostLayer::fpropActs(int inpIdx, float scaleTargets, PASS_TYPE passTy
         float cost = -trueLabelLogProbs.sum();
         float nCorrect = correctProbs.sum();
         float nValid = validLabels.sum();
+        //printf("cost %f, correct %f, valid %f, total %d\n", cost, nCorrect, nValid, numCases);
         float error = 0;
         if (nValid != 0) cost = cost / nValid * numCases;
         if (nValid != 0) error = (nValid - nCorrect) / nValid * numCases;
+        //printf("cost %f, error %f\n", cost, error);
 
         _costv.clear();
         _costv.push_back(cost);
